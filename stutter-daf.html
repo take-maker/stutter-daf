@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ブラウザDAF（遅延聴覚フィードバック）</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
+  label { display: block; margin: .5rem 0 .25rem; font-weight: 600; }
+  input[type="range"] { width: 100%; }
+  button { padding: .6rem 1rem; border: 0; border-radius: 10px; background: #4f46e5; color: #fff; font-weight: 700; }
+  button[disabled] { background: #a5b4fc; }
+  .note { font-size: .9rem; color: #444; }
+</style>
+<body>
+  <h1>ブラウザDAF 🎧</h1>
+  <p class="note">ヘッドホンを使ってね。音声は端末内で処理し、サーバーには送信されません（録音もしません）。医療的診断・治療を提供するものではありません。</p>
+
+  <div class="card">
+    <label for="delay">遅延時間: <span id="delayLabel">150</span> ms</label>
+    <input id="delay" type="range" min="0" max="300" value="150" step="10" />
+    <label for="gain">音量: <span id="gainLabel">80</span> %</label>
+    <input id="gain" type="range" min="0" max="100" value="80" step="1" />
+    <div style="margin-top: .8rem;">
+      <button id="startBtn">スタート</button>
+      <button id="stopBtn" disabled>ストップ</button>
+    </div>
+    <p class="note">コツ: エコーが気になる時は遅延を短く、音量を下げてね。環境音が大きい場所では効果が弱く感じることがあるよ。</p>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>プライバシーと同意</summary>
+      <p class="note">このツールは音声を外部に送信せず、録音や保存もしません。設定はブラウザ内に保存されます。利用を続けることで、この方針に同意したとみなします。</p>
+    </details>
+  </div>
+
+<script>
+let audioCtx, mediaStream, mediaNode, delayNode, gainNode;
+
+const delaySlider = document.getElementById('delay');
+const gainSlider = document.getElementById('gain');
+const delayLabel = document.getElementById('delayLabel');
+const gainLabel = document.getElementById('gainLabel');
+const startBtn = document.getElementById('startBtn');
+const stopBtn  = document.getElementById('stopBtn');
+
+// ラベル更新
+function updateLabels() {
+  delayLabel.textContent = delaySlider.value;
+  gainLabel.textContent = gainSlider.value;
+}
+delaySlider.addEventListener('input', () => {
+  if (delayNode) delayNode.delayTime.value = Number(delaySlider.value) / 1000;
+  updateLabels();
+});
+gainSlider.addEventListener('input', () => {
+  if (gainNode) gainNode.gain.value = Number(gainSlider.value) / 100;
+  updateLabels();
+});
+updateLabels();
+
+// 開始
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true;
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false });
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const maxDelay = 1.0; // 1秒まで
+    delayNode = audioCtx.createDelay(maxDelay);
+    gainNode  = audioCtx.createGain();
+
+    delayNode.delayTime.value = Number(delaySlider.value) / 1000; // 秒
+    gainNode.gain.value       = Number(gainSlider.value) / 100;
+
+    mediaNode = audioCtx.createMediaStreamSource(mediaStream);
+
+    // Graph: mic -> delay -> gain -> output
+    mediaNode.connect(delayNode).connect(gainNode).connect(audioCtx.destination);
+
+    stopBtn.disabled = false;
+  } catch (err) {
+    alert('マイクへのアクセスに失敗しました: ' + err.message);
+    startBtn.disabled = false;
+  }
+});
+
+// 停止
+stopBtn.addEventListener('click', async () => {
+  stopBtn.disabled = true;
+  try {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(t => t.stop());
+      mediaStream = null;
+    }
+    if (audioCtx) {
+      await audioCtx.close();
+      audioCtx = null;
+    }
+  } finally {
+    startBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
